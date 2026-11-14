@@ -130,6 +130,7 @@ The Y group has a higher mean and median than the N group, but the distributions
 boxplot: The central distributions overlap substantially, and both groups contain extreme values.
 
 
+
 (2) Does yi differ depending on the outcome type?
 
 ```{r}
@@ -142,11 +143,14 @@ boxplot(yi ~ measure, read,
  The distribution of yi may differ across measures, but this is a simple comparison that does not account for extreme values or group composition, so no final conclusion can be drawn yet.
 
 
+
 This is necessary because we need to distinguish genuine outcome differences from differences caused by an uneven representation of Y and N within each measure.
 ```{r}
 table(read$measure, read$dialogic_reading)
 ```
 This suggests that measure should be considered together with the main predictor, dialogic_reading, rather than interpreted as a simple separate group comparison.
+예를 들어 특정 언어 측정치에 Y 사례가 훨씬 많다면, 전체 Y 결과가 그 측정치의 특성을 많이 반영할 수 있어.
+For example, if one language measure contains many more Y cases, the overall Y result may largely reflect that measure’s characteristics.
 
 
 
@@ -186,9 +190,18 @@ First, each study contains multiple effect sizes. They come from the same childr
 If several effect sizes come from the same study, those rows share the study context and may not be independent.
 (1 | study_id) allows each study to have its own baseline level. Because the model handles both the average predictor relationship and study-level differences, it uses lmer().
 
+(1 | study_id)
+각 연구가 서로 다른 기본 효과수준을 가질 수 있도록 허용하는 부분이야.
+This allows each study to have its own baseline effect level.
+
+예를 들어 어떤 연구는 전체적으로 효과크기가 높고, 다른 연구는 전체적으로 낮을 수 있어.
+For example, one study may generally produce larger effect sizes, while another may produce smaller ones.
+
+이 연구별 차이를 고려한 뒤 dialogic_reading의 관계를 추정하는 거야.
+The model estimates the relationship with dialogic_reading after accounting for these study-level differences.
+
 
 Second, vi differs across effect sizes. yi with small vi is precise, and yi with large vi is imprecise.
-
 So before comparing Y and N, we first need to build a model that reflects both points.
 
 In this chunk, we build the two models that will be used for the comparison.
@@ -209,6 +222,27 @@ We want to give more weight to precise yi values. But if vi were used directly a
 
 So we flip it and use 1/vi. This way, the more precise yi is, the larger its weight.
 
+$$
+\sum_i
+\frac{
+\left(yi_i-\widehat{yi}_i\right)^2
+}{
+vi_i
+}
+$$
+
+즉, vi가 작은 효과크기는 오차분산이 작다고 보고 더 정확한 관측치로 취급해.
+Thus, an effect size with a small vi is treated as having smaller error variance and greater precision.
+
+반대로 vi가 큰 효과크기는 오차분산이 크다고 보고 덜 정확한 관측치로 취급해.
+Conversely, an effect size with a large vi is treated as having greater error variance and lower precision.
+
+계산 과정에서는 다음과 같은 weighted residual을 최소화하는 방향으로 계수를 추정해.
+
+During estimation, the model estimates coefficients by minimizing weighted residuals:
+
+
+
 ```{r}
 m1 <- lmer(yi ~ dialogic_reading + (1|study_id), read, weights = 1/vi)
 
@@ -218,7 +252,28 @@ summary(m1)
 summary(m0)
 
 ``` 
-m1
+m1: This means that dialogic_reading is used to explain or predict yi. This model estimates the average difference in yi between Y and N.
+
+Fixed: This means that, after accounting for study-level differences, Y is estimated to be 0.08296 higher than N on average.
+
+Random: Random effect는 연구마다 기본적인 효과크기 수준이 다를 수 있다는 점을 반영해.
+A random effect represents the possibility that studies have different baseline effect levels.
+
+예를 들어 모든 연구가 같은 수준에서 시작한다고 가정하지 않는 거야.
+For example, the model does not assume that all studies start from exactly the same baseline.
+
+어떤 연구는 참가자 특성 때문에 전체 yi가 높을 수 있고, 다른 연구는 측정도구 때문에 낮을 수 있어.
+One study may have generally higher yi values because of its participants, while another may have lower values because of its measurement instrument.
+
+
+0.1067: 연구마다 효과크기가 얼마나 다른지 나타냄
+0.1067: shows how much effect sizes vary across studies
+
+1.2022: 모델이 설명하지 못한 변동의 크기를 나타냄
+1.2022: shows the amount of variation the model does not explain
+
+
+
 The N group’s average effect is 0.310, and the Y group’s is 0.310 + 0.083 = 0.393.
 Y is 0.083 higher than N, but this difference is smaller than its standard error (0.098), so t = 0.85. It’s a size that could easily arise by chance.
 
@@ -226,7 +281,7 @@ study_id variance = 0.107 (SD 0.327): the baseline level of the effect differs b
 
 Residual = 1.202: because weights are included, each row’s residual variance is “1.202 × that row’s vi.” Since it’s close to 1, the given vi values roughly reflect the actual variation.
 
-m0
+m0: This means that the model estimates only the overall average of yi.
 The overall average effect without a Y/N split is 0.343 (SE 0.058).
 
 
@@ -240,6 +295,7 @@ confint(m1, method = "Wald")
 *Kenward-Roger
 Null hypothesis: Y and N have the same effect (= m0 is enough)
 Alternative hypothesis: Y and N have different effects (= m1 is needed
+
 
 Even with the same F value, different degrees of freedom give different p-values. Assuming more independent information gives a smaller p-value; assuming less gives a larger one.
 In ordinary regression (lm), every row is treated as independent, so the degrees of freedom are calculated simply:
