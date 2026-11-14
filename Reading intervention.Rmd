@@ -1,0 +1,483 @@
+
+
+# “After accounting for the dependence among multiple effect sizes from the same study, does dialogic reading produce larger effects than non-dialogic reading on the measured outcomes?”
+-> This question compares the effect sizes of dialogic and non-dialogic reading after accounting for dependence among multiple effect sizes from the same study.
+ 
+
+Difference between dialogic and non-dialogic reading
+- Y: The intervention used dialogic reading techniques
+- N: The intervention did not use dialogic reading techniques
+-> the main comparison should be understood as the effect difference between dialogic and non-dialogic reading.
+
+
+The dataset contians 316 effect sizes extracted from 54 studies 
+
+There can be multiple rows within the same study_id 
+= Same children in a study may be measured on multiple outcomes or at post-test and follow-up, so the rows cannot automatically be treated as independent. 
+
+
+vi is the sampling variance of each yi and is used to account for effect-size precision.
+
+study_id identifies multiple effect sizes from the same study and is used to define study-level clusters.
+measure indicates which outcome was measured for each effect size.
+
+
+
+
+```{r}
+library(lme4)
+library(pbkrtest)
+library(RLRsim)
+library(ggplot2)
+```
+
+
+
+```{r}
+read <- read.csv(r"(C:\Users\hidy0\Desktop\consultation\reading.csv)")
+```
+
+
+
+#Quality check 
+
+(1)  We will examine how yi is distributed for dialogic and non-dialogic reading. Because its directly connected to the main question.
+
+(2) After comparing the overall effects, we need to check whether the overall pattern is similar across all outcomes.
+= Does yi differ depending on the outcome type?
+= examine whether effect sizes differ substantially across measure categories.
+
+(3) If useful, we will also explore differences in effect sizes by age, ses, duration, and experimenter.
+
+```{r}
+head(read)
+dim(read)
+str(read)
+```
+
+```{r}
+colSums(is.na(read))
+```
+
+```{r}
+table(read$dialogic_reading, useNA = "ifany")
+table(read$follow_up, useNA = "ifany")
+```
+
+
+```{r} 
+summary(as.numeric(table(read$study_id)))
+```
+Different studies contain different numbers of effect sizes.
+
+Some studies have only one effect size, while another has as many as 42.
+
+-> Therefore, we should not treat all 316 rows as independent observations; the model must account for the connection among rows sharing the same study_id.
+
+
+We now know the rows are grouped by study. The natural next question is, “What do rows from the same study actually look like?” We need to see whether they’re similar to each other and whether they differ by study.
+
+```{r}
+ggplot(read, aes(x = factor(study_id), y = yi)) +
+  geom_jitter(width = 0.1, height = 0) + 
+  ylim(-2, 9)
+```
+=> yi values from the same study cluster in a relatively narrow range, but the level of that cluster differs by study (e.g., study 22). So the baseline level of yi is taken to differ by study, and the model includes a study-level random intercept.
+"같은 study 안은 좁고, study끼리는 다르다"는 표현이 데이터와 일치해요.
+
+
+
+yi is the value of each effect size, so we need to inspect its range and distribution.
+
+vi is the sampling variance of an effect size, so we need to check whether it contains valid variance values.
+
+```{r}
+range(read$yi)
+range(read$vi)
+
+summary(read$yi)
+summary(read$vi)
+```
+*The mean being larger than the median suggests that some large positive effect sizes may also be present and that the distribution may not be symmetric.
+--> Neither yi nor vi appears perfectly symmetric.
+
+*The minimum vi is 0.025, so all vi values are greater than 0 and there are no invalid variance values.
+
+*range(read$vi) gives 0.025 to 30.9: vi shows how imprecise yi is, so the precision of the most and least precise yi differs by more than 1,000 times. yi values with such different precision shouldn’t be treated equally in the model, so we use weights = 1/vi to give more weight to precise yi.
+
+
+
+```{r}
+read[c(which.min(read$yi), which.max(read$yi)), ]
+```
+
+```{r}
+read[read$es_id %in% c(129, 58), ]
+```
+
+
+How does the distribution of yi differ between dialogic_reading = Y and N?
+
+```{r}
+tapply(read$yi, read$dialogic_reading, summary)
+
+boxplot(yi ~ dialogic_reading, read,
+        xlab = "dialogical reading",
+        ylab = "yi")
+```
+The Y group has a higher mean and median than the N group, but the distributions overlap and the Y group contains a very large negative extreme value.
+
+boxplot: The central distributions overlap substantially, and both groups contain extreme values.
+
+
+(2) Does yi differ depending on the outcome type?
+
+```{r}
+tapply(read$yi, read$measure, summary)
+
+boxplot(yi ~ measure, read,
+        xlab = "measure",
+        ylab = "yi")
+```
+ The distribution of yi may differ across measures, but this is a simple comparison that does not account for extreme values or group composition, so no final conclusion can be drawn yet.
+
+
+This is necessary because we need to distinguish genuine outcome differences from differences caused by an uneven representation of Y and N within each measure.
+```{r}
+table(read$measure, read$dialogic_reading)
+```
+This suggests that measure should be considered together with the main predictor, dialogic_reading, rather than interpreted as a simple separate group comparison.
+
+
+
+To check whether the difference between Y and N effect sizes is truly related to dialogic reading or instead reflects differences in study conditions.
+```{r}
+table(read$age, read$dialogic_reading, useNA = "ifany")
+table(read$ses, read$dialogic_reading, useNA = "ifany")
+table(read$experimenter, read$dialogic_reading, useNA = "ifany")
+
+summary(read$duration)
+table(read$duration, useNA = "ifany")
+```
+The Y and N groups are not fully balanced across study conditions, so differences in yi should not be interpreted as the effect of dialogic reading alone.
+
+ex) N 연구는 교사가 진행한 경우가 많고, Y 연구는 부모가 진행한 경우가 많아요.
+N studies were mostly run by teachers, and Y studies mostly by parents.
+
+만약 교사가 진행하면 원래 effect가 더 크게 나온다고 해봐요. 그러면 N 연구의 effect가 커 보이는 건 **”non-dialogic이라서"가 아니라 "교사가 진행해서"**일 수 있어요.
+Suppose interventions run by teachers naturally show larger effects. Then N studies might look larger not because they’re non-dialogic, but because teachers ran them.
+
+즉 지금 Y와 N을 비교한 결과에는 dialogic 여부와 진행자 차이가 섞여 있어요. 둘을 구분할 수 없어요.
+So the current Y vs. N comparison mixes together the dialogic effect and the difference in who ran it. The two can’t be told apart.
+
+=> The fix: put the conditions in the model
+
+
+
+
+
+
+
+
+#Model Fitting
+In the quality check, we confirmed two things.
+
+First, each study contains multiple effect sizes. They come from the same children and may be similar, so the 316 rows cannot be treated as independent.
+If several effect sizes come from the same study, those rows share the study context and may not be independent.
+(1 | study_id) allows each study to have its own baseline level. Because the model handles both the average predictor relationship and study-level differences, it uses lmer().
+
+
+Second, vi differs across effect sizes. yi with small vi is precise, and yi with large vi is imprecise.
+
+So before comparing Y and N, we first need to build a model that reflects both points.
+
+In this chunk, we build the two models that will be used for the comparison.
+
+하나는 Y와 N의 effect가 다를 수 있다고 보는 모델입니다.
+One model allows the Y and N effects to differ.
+다른 하나는 Y와 N의 effect가 같다고 보는 모델입니다.
+The other model assumes the Y and N effects are the same.
+
+m1 predicts different values for Y and N rows, while m0 predicts the same value for both.
+
+
+
+*왜 weights = 1/vi를 쓰는가
+vi shows how imprecise yi is. The larger vi is, the less precise yi is.
+
+We want to give more weight to precise yi values. But if vi were used directly as the weight, less precise yi would get more weight, which is the opposite of what we want.
+
+So we flip it and use 1/vi. This way, the more precise yi is, the larger its weight.
+
+```{r}
+m1 <- lmer(yi ~ dialogic_reading + (1|study_id), read, weights = 1/vi)
+
+m0 <- lmer(yi ~ 1 + (1|study_id), read, weights = 1/vi)
+
+summary(m1)
+summary(m0)
+
+``` 
+m1
+The N group’s average effect is 0.310, and the Y group’s is 0.310 + 0.083 = 0.393.
+Y is 0.083 higher than N, but this difference is smaller than its standard error (0.098), so t = 0.85. It’s a size that could easily arise by chance.
+
+study_id variance = 0.107 (SD 0.327): the baseline level of the effect differs by study.
+
+Residual = 1.202: because weights are included, each row’s residual variance is “1.202 × that row’s vi.” Since it’s close to 1, the given vi values roughly reflect the actual variation.
+
+m0
+The overall average effect without a Y/N split is 0.343 (SE 0.058).
+
+
+```{r}
+#whether Y–N difference is significant
+KRmodcomp(m1, m0)
+
+confint(m1, method = "Wald")
+```
+
+*Kenward-Roger
+Null hypothesis: Y and N have the same effect (= m0 is enough)
+Alternative hypothesis: Y and N have different effects (= m1 is needed
+
+Even with the same F value, different degrees of freedom give different p-values. Assuming more independent information gives a smaller p-value; assuming less gives a larger one.
+In ordinary regression (lm), every row is treated as independent, so the degrees of freedom are calculated simply:
+In a mixed model, the exact degrees of freedom are unknown and In our data, 316 rows are grouped into 54 studies, and rows from the same study aren’t independent. So there’s less independent information than 316 rows.
+But it isn’t simply 54 (the number of studies) either, because rows within the same study aren’t completely identical.
+So the true degrees of freedom lie somewhere between 54 and 316, and no formula pins down the exact number.
+Kenward-Roger looks at the model structure (how rows are grouped by study, the between-study variance, etc.) and approximates the degrees of freedom. It then uses those degrees of freedom to compute the p-value.
+If we didn’t do this and used 314 as in ordinary regression, we’d be assuming more independent information than there really is, and the p-value could come out too small. That could lead to wrongly concluding a difference is “significant” when there isn’t one.
+
+해석
+Kenward-Roger degrees of freedom = 372.15
+and the pval is far above 0.05. 
+Conclusion: there is no evidence that Y and N have different effects.
+
+-> m0 is the better model. The data can be explained well enough without separating Y and N, so there is no evidence that Y and N have different effects.
+
+
+*Two ways to build a confidence interval
+The boot method
+모델로 가짜 데이터를 만들어요. (PBmodcomp와 같은 방식)
+Generate fake data from the model (the same way as PBmodcomp).
+가짜 데이터에 모델을 다시 적합해서 “Y − N 차이”를 구해요.
+Refit the model to the fake data and get the Y − N difference.
+이걸 여러 번 반복해서 차이 값을 많이 모아요.
+Repeat many times to collect many difference values.
+모은 값들 중 가운데 95%의 범위가 신뢰구간이에요.
+The range covering the middle 95% of those values is the confidence interval.
+
+The Wald method
+Confidence interval = estimate ± 1.96 × standard error
+ 
+The 95% Wald confidence interval for the effect difference between Y and N runs from −0.109 to 0.275 and includes 0. So the possibility that dialogic and non-dialogic reading have the same effect cannot be ruled out, consistent with the Kenward-Roger test (p = 0.405). Meanwhile, the confidence interval for the N group’s average effect (0.168 to 0.453) excludes 0, so non-dialogic reading also shows an effect greater than 0.
+
+
+
+
+
+The result that m0 is sufficient comes from a comparison that does not account for study conditions. Because Y and N studies have uneven study conditions, those differences may have masked a real difference between Y and N. Therefore, we check whether the same conclusion holds in a model that also includes age, ses, experimenter, and duration.
+
+퀄리티 체크에서 Y와 N 그룹은 study 조건이 고르지 않다는 걸 확인했어요. 예를 들어 Y 연구는 부모가 진행한 경우가 많고, N 연구는 교사가 진행한 경우가 많아요.
+In the quality check, we found that the Y and N groups have uneven study conditions. For example, Y studies were more often run by parents, and N studies more often by teachers.
+
+=>  Add age, ses, experimenter, and duration to the model, and check whether there’s still no Y–N difference once the study conditions are held equal.
+
+```{r}
+#model adjusting for study conditions
+mm1 <- lmer(yi ~ dialogic_reading+ age + ses + experimenter + duration + (1|study_id), read, weights = 1/vi)
+
+mm0 <- lmer(yi ~ age + ses + experimenter + duration + (1|study_id), read, weights = 1/vi)
+
+summary(mm1)
+summary(mm0)
+
+KRmodcomp(mm1,mm0)
+```
+Still, p = 0.267, above 0.05. Even with the conditions held equal, the Y–N difference isn’t significant.
+
+So the main conclusion (“no evidence of a difference”) isn’t driven by the study conditions.
+
+In the model adjusting for age, ses, experimenter, and duration (291 rows from 47 studies after excluding rows with missing values), the effect difference between Y and N was also not significant (difference = 0.131, SE = 0.115, KRmodcomp p = 0.267). None of the four adjusted conditions was clearly related to yi. Therefore, the main conclusion of no Y–N difference is not driven by imbalance in study conditions.
+
+
+
+
+he reason for including (1|study_id) was the plot of yi by study in quality check, where the heights looked different from study to study
+But that was judged by eye, so it isn’t certain whether the heights really differ or just happen to look that way. So this chunk tests it with numbers.
+```{r}
+m_nostudy <- lm(yi ~ dialogic_reading, read, weights = 1/vi)
+
+rlrt <- 2*(as.numeric(logLik(m1)) - as.numeric(logLik(m_nostudy, REML=TRUE)))
+0.5*pchisq(rlrt, df =1 , lower.tail = FALSE)
+```
+logLik: This is called the likelihood. The better the model explains the data, the larger L is.
+
+rlrt = 2 × (logLik(m1) − logLik(m1_nostudy))
+pchisq(x, df, lower.tail = FALSE) = P(χ²_df ≥ x)
+“The probability of getting a value above x in a chi-square distribution.”
+
+H₀ (null): no between-study difference (σ²_study = 0)
+H₁ (alternative): there is a between-study difference (σ²_study > 0)
+=> The baseline level of yi clearly differs by study, so including (1|study_id) in the model was correct.
+
+
+
+ 
+So far we compared Y and N with all measures combined, and found no difference. But the client said examining differences across measures could be useful, and the quality check also suggested yi distributions differ by measure.
+-> So we check whether the Y–N difference varies by measure.
+```{r}
+#YN difference is the same 
+ma <- lmer(yi ~ dialogic_reading * measure + (1|study_id), read, weights = 1/vi)
+#YN differ by measure 
+mb <- lmer(yi ~ dialogic_reading + measure + (1|study_id), read, weights = 1/vi)
+
+KRmodcomp(ma, mb)
+```
+The model including the interaction between dialogic_reading and measure was not significantly better than the model without it (F = 1.35, p = 0.239). There is therefore no evidence that the Y–N effect difference varies by measure.
+
+
+
+#Diagnostic
+
+```{r}
+plot(fitted(m1), residuals(m1), xlab ="Fitted", ylab = "Residuals")
+abline(h=0)
+
+qqnorm(residuals(m1))
+qqline(residuals(m1))
+
+ranef(m1)
+```
+Both plots single out es 129 (−29) and es 58 (8) — the same rows found in the quality check. So from the model’s point of view these are the worst-fitting rows as well.
+
+ranef: How far that study sits above or below the overall level.
+Only study 27 (0.945) sits outside that range — more than double study 49 (0.407), the next largest.
+
+
+
+
+```{r}
+r <- residuals(m1)
+
+read[order(abs(r), decreasing = TRUE)[1:10], c("es_id", "study_id", "yi", "vi")]
+```
+
+
+
+
+
+(1) 129, 58 
+```{r}
+read_del1 <- subset(read, !(es_id %in% c(129, 58)))
+
+s1 <- lmer(yi ~ dialogic_reading + (1|study_id), read_del1, weights = 1/vi)
+s0 <- lmer(yi ~ 1 + (1|study_id), read_del1, weights = 1/vi)
+
+summary(s1)
+KRmodcomp(s1, s0)
+
+```
+
+
+(2) 27
+```{r}
+read_del2 <- subset(read, !(es_id %in% c(129, 58)) & study_id != 27)
+
+ss1 <- lmer(yi ~ dialogic_reading + (1|study_id), read_del2, weights = 1/vi)
+ss0 <- lmer(yi ~ 1 + (1|study_id), read_del2, weights = 1/vi)
+
+summary(ss1)
+KRmodcomp(ss1, ss0)
+```
+Study 27, the only study-level extreme identified by ranef, was additionally excluded (310 rows, 53 studies). The Y–N effect difference barely changed, from 0.129 to 0.135, but the between-study variance fell 38%, from 0.128 to 0.079. This shows that study 27 was inflating between-study variation rather than distorting the Y–N comparison itself, because the random intercept had already absorbed that study’s level. The standard error fell from 0.092 to 0.083, bringing p to 0.108, still not significant.
+
+
+(3) 22 
+```{r}
+read_del3 <- subset(read, !(es_id %in% c(129, 58)) & !(study_id %in% c(27, 22)))
+
+sss1 <- lmer(yi ~ dialogic_reading + (1|study_id), read_del3, weights = 1/vi)
+sss0 <- lmer(yi ~ 1 + (1|study_id), read_del3, weights = 1/vi)
+
+summary(sss1)
+KRmodcomp(sss1, sss0)
+```
+The conclusion holds. p = 0.183, above 0.05.
+Study 22, which contains 13 implausible effect sizes (yi 3.2 to 6.9), was additionally excluded (297 rows, 52 studies). The Y–N effect difference fell from 0.135 to 0.109 and p rose from 0.108 to 0.183. Although study 22’s row-level weights are small (vi 5.5 to 30.9), it is a Y-group study sitting at a high level (ranef = 0.353), so it influenced the Y–N comparison, which operates at the study level. Across the four analyses the effect difference ranged from 0.083 to 0.135 and p from 0.108 to 0.405, none significant.
+
+(4) 297
+```{r}
+read_del4 <- subset(read, !(es_id %in% c(129, 58, 297)) & !(study_id %in% c(27, 22)))
+
+t1 <- lmer(yi ~ dialogic_reading + (1|study_id), read_del4, weights = 1/vi)
+t0 <- lmer(yi ~ 1 + (1|study_id), read_del4, weights = 1/vi)
+
+summary(t1)
+KRmodcomp(t1, t0)
+```
+The Y–N effect difference was 0.102, still not significant (p = 0.190).
+
+
+결론 
+1. p가 다섯 번 모두 0.05보다 커요. 어떤 걸 빼도 “Y와 N의 차이에 근거가 없다”예요.
+1. p is above 0.05 in all five. Whatever is removed, the answer is “no evidence of a Y–N difference.”
+
+2. 차이 추정값도 0.08 ~ 0.14 사이에서만 움직여요. 결론이 뒤집힐 만큼 크게 변하지 않았어요.
+2. The estimate stays between 0.08 and 0.14. It never moved enough to overturn anything.
+
+3. 그래서 7단계 결론이 이상한 데이터 때문이 아니라는 게 확인됐어요. 이게 8단계의 목적이었어요.
+3. So the Step 7 conclusion is confirmed not to be an artifact of the bad data. That was the point of Step 8.
+
+
+
+
+9단계: Follow-up 분석과 최종 보고
+
+secondary analysis에서 follow_up에 따른 effect difference를 분석합니다. 마찬가지로 interaction 모델과 interaction이 없는 모델을 비교합니다.
+In the secondary analysis, we will analyze effect differences by follow_up by comparing models with and without the interaction.
+
+r
+fA <- lmer(yi ~ dialogic_reading * follow_up + (1|study_id), data = read, weights = 1/vi)
+fB <- lmer(yi ~ dialogic_reading + follow_up + (1|study_id), data = read, weights = 1/vi)
+KRmodcomp(fA, fB)
+
+intervention 직후의 effect와 later follow-up effect를 비교해서 효과가 유지되는지 확인합니다.
+We will compare immediate effects with follow-up effects to assess whether the effect persists.
+
+최종적으로 다음 질문에 답합니다.
+Finally, we will answer the following questions:
+
+dialogic reading의 overall effect가 non-dialogic reading보다 큰가?
+Is the overall effect of dialogic reading larger than that of non-dialogic reading?
+dialogic reading의 effect가 measure에 따라 달라지는가?
+Does the effect of dialogic reading differ by measure?
+효과가 follow-up 시점에도 유지되는가?
+Does the effect persist at follow-up?
+결과의 uncertainty, study 간 차이, influential study, 분석의 한계는 무엇인가?
+What are the uncertainty, between-study differences, influential studies, and limitations?
+
+정리하면, main analysis는 study random intercept가 있는 linear mixed model로 dialogic과 non-dialogic reading의 overall yi 차이를 분석합니다. measure는 추가 moderator analysis로, follow_up은 secondary analysis로 분석합니다.
+In summary, the main analysis uses a linear mixed model with a study random intercept to examine the overall difference in yi. measure is analyzed as an additional moderator, and follow_up as a secondary question.
+
+
+
+
+
+
+
+
+내 질문 
+PBmodcomp	
+confint(method = "boot")
+exactRLRT
+
+① PBmodcomp and confint(boot): the fake data are generated wrong
+둘 다 모델로 가짜 데이터를 만들어서 쓰는 방법이에요. 그런데 weights가 있는 모델에서 R이 가짜 데이터를 만들면, 원래보다 훨씬 더 크게 흔들리는 데이터가 나와요.
+Both generate fake data from the model and work from it. But when R generates fake data from a model with weights, the data come out varying far more than the original.
+
+② exactRLRT: it drops the weights from the comparison model
+exactRLRT는 (1|study_id)가 없는 비교 모델을 자기가 만드는데, 그때 weights를 넣지 않아요. 그래서 두 모델이 “study 차이” 말고 “weights 있음/없음”까지 달라져요.
+exactRLRT builds the comparison model without (1|study_id) on its own, and leaves the weights out. So the two models differ not only in “study differences” but also in “weights or no weights.”
+
