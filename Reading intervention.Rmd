@@ -511,7 +511,7 @@ read[order(abs(r), decreasing = TRUE)[1:10], c("es_id", "study_id", "yi", "vi")]
 And I'm gonna remove these outliers one by one and see if the Y–N results change." 
 
 
-(1) 129, 58 
+(1) Remove 129, 58 es_id
 ```{r}
 read_del1 <- subset(read, !(es_id %in% c(129, 58)))
 
@@ -522,9 +522,11 @@ summary(s1)
 KRmodcomp(s1, s0)
 
 ```
+"First, I removed effect sizes 129 and 58, but the Y–N difference was still not significant."
 
+"and 27 which we found from the random-intercept analysis, wasn't significant either,"
 
-(2) 27
+(2) Remove study_id 27
 ```{r}
 read_del2 <- subset(read, !(es_id %in% c(129, 58)) & study_id != 27)
 
@@ -534,10 +536,10 @@ ss0 <- lmer(yi ~ 1 + (1|study_id), read_del2, weights = 1/vi)
 summary(ss1)
 KRmodcomp(ss1, ss0)
 ```
-Study 27, the only study-level extreme identified by ranef, was additionally excluded (310 rows, 53 studies). The Y–N effect difference barely changed, from 0.129 to 0.135, but the between-study variance fell 38%, from 0.128 to 0.079. This shows that study 27 was inflating between-study variation rather than distorting the Y–N comparison itself, because the random intercept had already absorbed that study’s level. The standard error fell from 0.092 to 0.083, bringing p to 0.108, still not significant.
+Study 27, the only study-level extreme identified by ranef, was additionally excluded (310 rows, 53 studies). 
 
 
-(3) 22 
+(3) Remove study_id 22 
 ```{r}
 read_del3 <- subset(read, !(es_id %in% c(129, 58)) & !(study_id %in% c(27, 22)))
 
@@ -547,10 +549,9 @@ sss0 <- lmer(yi ~ 1 + (1|study_id), read_del3, weights = 1/vi)
 summary(sss1)
 KRmodcomp(sss1, sss0)
 ```
-The conclusion holds. p = 0.183, above 0.05.
-Study 22, which contains 13 implausible effect sizes (yi 3.2 to 6.9), was additionally excluded (297 rows, 52 studies). The Y–N effect difference fell from 0.135 to 0.109 and p rose from 0.108 to 0.183. Although study 22’s row-level weights are small (vi 5.5 to 30.9), it is a Y-group study sitting at a high level (ranef = 0.353), so it influenced the Y–N comparison, which operates at the study level. Across the four analyses the effect difference ranged from 0.083 to 0.135 and p from 0.108 to 0.405, none significant.
 
-(4) 297
+
+(4) Remove 297 es_id
 ```{r}
 read_del4 <- subset(read, !(es_id %in% c(129, 58, 297)) & !(study_id %in% c(27, 22)))
 
@@ -560,7 +561,10 @@ t0 <- lmer(yi ~ 1 + (1|study_id), read_del4, weights = 1/vi)
 summary(t1)
 KRmodcomp(t1, t0)
 ```
-The Y–N effect difference was 0.102, still not significant (p = 0.190).
+"And for the Study 22 and row 297, the Y–N difference was still not significant. So the conclusion stayed the same."
+The results do not provide clear evidence that dialogic reading leads to better outcomes, even after removing the outliers." 
+
+=> The results do not provide clear evidence that dialogic reading leads to better outcomes for children, even after removing the outliers.
 
 
 결론 
@@ -578,39 +582,36 @@ The Y–N effect difference was 0.102, still not significant (p = 0.190).
 
 #Follow-up 
 
-So far we’ve established there’s no Y–N difference, that it doesn’t vary by measure, and that it isn’t an artifact of extreme values.
-
-The remaining question is timing. Until now, immediate and later measurements have been mixed together in the analysis. But follow_up records when each result was measured:
-
 N: 개입 직후 (post-test)
 N: immediately after the intervention (post-test)
 Y: 시간이 지난 뒤 (follow-up)
 Y: at a later follow-up
 
 -> Does the effect persist over time?
-
-
 -> Does the Y–N difference depend on timing?
+
+"And finally, I looked at follow-up to see if the effects changed over time."
 
 ```{r}
 table(read$dialogic_reading, read$follow_up)
 
 unique(read$study_id[read$follow_up == "Y"])
 ```
-    N   Y (follow up)
+"There isn't enough data to compare Y and N at follow-up, but we can compare the effects right after the program and later on."
+
+
+N   Y (follow up)
 N 140  39
 Y 128   9
-Only 48 Y and only 9 of the 48 rows are dialogic.
-
 And Only 9 of the 54 studies measured again later.
+= 9=Y vs 39=N → the Y side has only 9 ✗
 
-= 9 vs 39 → the Y side has only 9 ✗
-= The Y average at the later time point would have to be estimated from 9 rows. That estimate is unstable, and the comparison built on top of it is more unstable still.
-
-
-But we have 268 vs 48. Both sides have plenty. The comparison works. -> 
+= 268(Post) vs 48(Follow) 
+Both sides have plenty. The comparison works. -> 
 질문 1: 효과가 시간이 지나면 약해지는가
 Question 1: Do effects weaken over time?
+
+
 
 ```{r}
 m1 <- lmer(yi ~ dialogic_reading + (1|study_id), read, weights = 1/vi)
@@ -626,17 +627,12 @@ dialogic_readingY
        0.08295989 
 dialogic_readingY 
        0.08298941 
-This time follow_up was added and nothing moved at all.
-
+       
 ```{r}
 KRmodcomp(read_f, m1)
 ```
-p = 0.912, far above 0.05, so the null is not rejected.
-
-In model terms: read_follow, which includes follow_up, was no better than m1, which doesn’t. m1 is sufficient.
-
-So there are no grounds to claim that effects differ by timing.
-
+"So I added follow-up to the model, but the coefficient for the Y–N difference barely changed, And the p-value is 0.91, so adding follow-up didn't really improve the model." 
+So basically, the reading program seems to work about the same, even after some time has passed." 
 
 
 ```{r}
@@ -655,37 +651,51 @@ fA (*)
 yi = β₀ + β₁ × Y + β₂ × F + β₃ × (Y × F) + u_study + ε
 
 
-“So we knew going in that the dialogic-plus-follow-up cell only had nine rows, but we went ahead and ran the interaction anyway, just to see.
+"There are only 9 follow-up results for Y, but I test the interaction anyway.
 
-The p-value came out at 0.99, so adding the interaction didn’t improve on the simpler model at all.
-
-But honestly the p-value isn’t the interesting part here. Look at the coefficient — it’s 0.026, and the standard error is 0.229. That’s almost ten times the estimate, and it’s more than twice the standard error on any of the other terms.
-
-So it’s not that we found no effect. It’s that with only nine rows, we just can’t tell. The estimate’s too noisy to say anything either way.”
+The p-value is high and the standard error is large, so as expected, there's no significant difference."
 
 
 
+ 
+<Result>
 
-<Result> 
+Main takeaway: No clear evidence that dialogic reading works better than non-dialogic reading.
+
+Conclusion: Pretty consistent across the different analyses.
+
+Based on this dataset: No clear advantage of dialogic reading over non-dialogic reading.
+
+-------------------------------------------
 So, the main takeaway is that I didn't find clear evidence that dialogic reading works better than non-dialogic reading.
-
 And the conclusion was pretty consistent across the different analyses.
-
 So, based on this dataset, there doesn't seem to be a clear advantage of dialogic reading over non-dialogic reading.
 
 
 <Limitation> 
 
-One limitation is that I actually looked at the method used in the original paper, which was robust variance estimation, but I wasn't familiar enough with it to use it myself.
+(1) Random effects
+Differences between studies considered -> not fully account for differences within each study
+Ex) Measure: Vocabulary & Pronunciation might be related closely
 
-So instead, I used a mixed-effects regression model, which is something I've learned in class and felt more comfortable working with.
+-> Original paper: RVE to deal with this issue.
 
-My model does account for the fact that results from the same study are related, but it doesn't fully capture how they're related.
+(2) Weights (1/vi)
+More weight to more accurate effect sizes 
 
-For example, some outcomes might be more closely related than others, and my model doesn't really account for that.
+Caused problems with analysis: some methods didn't handle weights properly
 
-So that could affect my standard errors and p-values, and it's something to keep in mind when interpreting my results.
+------------------------------
+And here are the limitations of my analysis.
+My model uses random effects to account for differences between studies, but it doesn't fully account for differences within each study.
+For example, some outcomes, like vocabulary and pronunciation, might be related closely , but my model doesn't really capture that.
+I also looked at the original paper, and they used RVE to deal with this issue. But that's a method I haven't learned yet.
 
+Another limitation is the weights. I used 1/vi because I wanted to give more weight to more accurate effect sizes.
+But this caused some problems with the analysis. For some reason, some methods didn't handle the weights properly, so I couldn't use them.
+
+
+So yeah, those are the main limitations of my analysis. And that's pretty much it. Thank you! 
 
 
 
